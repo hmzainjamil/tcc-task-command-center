@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# tcc-dashboard — full system status at a glance
+source ~/.claude/tier0.env 2>/dev/null
+
+B="\033[34m"; G="\033[32m"; Y="\033[33m"; R="\033[31m"; C="\033[36m"; W="\033[37m"; BOLD="\033[1m"; RST="\033[0m"
+
+echo -e "${BOLD}${B}"
+echo "╔══════════════════════════════════════════════════════════════════════╗"
+echo "║          MAE + TCC — MASTER AUTOMATION DASHBOARD                   ║"
+echo "║          DigiMinds Agency  |  $(date '+%Y-%m-%d %H:%M')                        ║"
+echo "╚══════════════════════════════════════════════════════════════════════╝${RST}"
+echo ""
+
+# ── Tier 0 LLMs ──
+echo -e "${C}  ▸ TIER 0 LLMs${RST}"
+ollama list 2>/dev/null | grep -v NAME | head -3 | while read m _; do
+    echo -e "  ${G}✓${RST} Ollama: $m"
+done
+[ -n "$GROQ_API_KEY" ]    && echo -e "  ${G}✓${RST} Groq (llama-3.1-8b-instant, llama-3.3-70b-versatile)"
+[ -n "$GEMINI_API_KEY" ]  && echo -e "  ${G}✓${RST} Gemini 2.0 Flash"
+[ -n "$DEEPSEEK_API_KEY" ] && echo -e "  ${G}✓${RST} DeepSeek-V3"
+[ -n "$OPENAI_API_KEY" ]  && echo -e "  ${G}✓${RST} GPT-4o-mini"
+[ -n "$OPENROUTER_API_KEY" ] && echo -e "  ${G}✓${RST} OpenRouter (100+ models)"
+
+echo ""
+
+# ── Paperclip ──
+echo -e "${C}  ▸ PAPERCLIP CEO LAYER${RST}"
+PAPER=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3100/ 2>/dev/null)
+if [ "$PAPER" = "200" ]; then
+    echo -e "  ${G}✓${RST} Running at http://127.0.0.1:3100"
+else
+    echo -e "  ${R}✗${RST} Paperclip not responding (HTTP $PAPER)"
+fi
+
+echo ""
+
+# ── TCC Queue ──
+echo -e "${C}  ▸ TCC TASK QUEUE${RST}"
+~/.claude/bin/tcc queue 2>/dev/null | grep -E "(Pending|Active|Done|PENDING|ACTIVE|DONE|FAILED|──)" | head -15
+
+echo ""
+
+# ── Workflows ──
+echo -e "${C}  ▸ WORKFLOWS${RST}"
+ls ~/.claude/workflows/*.json 2>/dev/null | while read f; do
+    NAME=$(basename "$f" .json)
+    STEPS=$(python3 -c "import json; d=json.load(open('$f')); print(len(d.get('steps',[])))" 2>/dev/null)
+    echo -e "  ${Y}•${RST} $NAME  ($STEPS steps)"
+done
+
+echo ""
+
+# ── Agent Registry ──
+echo -e "${C}  ▸ AGENT REGISTRY${RST}"
+python3 -c "
+import json
+from pathlib import Path
+reg = json.loads((Path.home()/'.claude/tcc-routes/agent-registry.json').read_text())
+agents = list(reg.get('agents',{}).keys())
+print(f'  Agents: {len(agents)} registered')
+print(f'  Available: {chr(32).join(agents)}')
+repos = len(reg.get('installed_repos',{}))
+print(f'  Installed repos: {repos}+ available')
+" 2>/dev/null
+
+echo ""
+
+# ── LaunchAgents ──
+echo -e "${C}  ▸ SCHEDULED JOBS${RST}"
+launchctl list 2>/dev/null | grep "ai.hmz" | while read pid status label; do
+    if [ "$pid" != "-" ] && [ -n "$pid" ]; then
+        echo -e "  ${G}✓${RST} $label (PID $pid)"
+    else
+        echo -e "  ${Y}•${RST} $label (scheduled)"
+    fi
+done
+
+echo ""
+# ── Disk + RAM status ──
+echo -e "${C}  ▸ SYSTEM RESOURCES${RST}"
+DISK_FREE=$(df -h / | awk 'NR==2{print $4}')
+RAM_FREE=$(python3 -c "
+import subprocess,re
+try:
+    out=subprocess.check_output(['vm_stat'],timeout=3).decode()
+    free=int(re.search(r'Pages free:\s+(\d+)',out).group(1))
+    inact=int(re.search(r'Pages inactive:\s+(\d+)',out).group(1))
+    gb=(free+inact)*4096/1024**3
+    color='\033[32m' if gb>=2.5 else '\033[33m' if gb>=1.5 else '\033[31m'
+    print(f'{color}{gb:.1f}GB\033[0m')
+except: print('?')
+" 2>/dev/null)
+CACHE_SIZE=$(du -sh ~/Library/Caches/ 2>/dev/null | cut -f1)
+echo -e "  Disk free: ${G}${DISK_FREE}${RST}  |  RAM free: ${RAM_FREE}  |  Caches: ${Y}${CACHE_SIZE}${RST}"
+echo -e "  Run ${W}sys-clean${RST} to purge caches  |  ${W}sys-status${RST} for full breakdown"
+echo ""
+
+echo -e "${B}  COMMANDS:${RST}"
+echo -e "  ${W}mae run 'goal'${RST}          — decompose + parallel execute any goal"
+echo -e "  ${W}mae daily${RST}               — run full DigiMinds daily ops"
+echo -e "  ${W}mae status${RST}              — system health check"
+echo -e "  ${W}tcc blast 't1' 't2'${RST}     — add + fire multiple tasks in parallel"
+echo -e "  ${W}tcc fire all${RST}            — fire all pending tasks"
+echo -e "  ${W}tcc retry --fire${RST}        — retry all failed tasks"
+echo -e "  ${W}tcc purge${RST}               — clean up failed tasks"
+echo -e "  ${W}tcc watch${RST}               — live queue monitor"
+echo -e "  ${W}mae deploy digiminds-daily${RST} — run daily workflow"
+echo ""

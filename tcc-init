@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# tcc-init — Initialize Task Command Center with current active tasks
+# Run once to seed tasks from existing workflows, agents, Paperclip goals
+
+set -e
+TCC=~/.claude/bin/tcc
+source ~/.claude/tier0.env 2>/dev/null
+
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║         TCC INIT — Loading Active Task Registry          ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo ""
+
+# ── Seed from Paperclip API ───────────────────────────────────────
+echo "▸ Checking Paperclip CEO layer..."
+PAPER_TASKS=$(curl -s http://127.0.0.1:3100/api/tasks 2>/dev/null || echo "[]")
+PAPER_GOALS=$(curl -s http://127.0.0.1:3100/api/goals 2>/dev/null || echo "[]")
+
+if echo "$PAPER_TASKS" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(t.get('title','')) for t in (d if isinstance(d,list) else d.get('tasks',d.get('data',[])))[:5]]" 2>/dev/null; then
+    echo "  ✓ Paperclip tasks found"
+else
+    echo "  ⚠ Paperclip API — tasks route not available (UI at http://127.0.0.1:3100)"
+fi
+
+# ── Seed example tasks from common DigiMinds operations ──────────
+echo ""
+echo "▸ Seeding operational task templates..."
+
+TEMPLATES=(
+    "Research competitor Google Ads strategies for DigiMinds agency clients"
+    "Generate weekly SEO audit report for top 3 client websites"
+    "Draft cold email outreach sequence for 10 new agency prospects"
+    "Analyze and report on Meta Ads performance for current clients"
+    "Build lead generation list from LinkedIn for nursing school niche"
+    "Create content calendar for DigiMinds social media accounts"
+    "Run keyword research for new PPC campaign proposals"
+    "Generate agency case study PDF from recent client results"
+)
+
+for tmpl in "${TEMPLATES[@]}"; do
+    $TCC add "$tmpl" --priority med 2>/dev/null
+done
+
+echo ""
+echo "▸ Queue initialized:"
+$TCC queue
+
+echo ""
+echo "──────────────────────────────────────────────────────────────"
+echo "  COMMANDS:"
+echo "  tcc queue              — view all tasks"
+echo "  tcc fire all           — execute ALL pending in parallel"
+echo "  tcc blast 'task1' 'task2' — add + fire immediately"
+echo "  tcc add 'task' --fire  — add single task and fire it"
+echo "  tcc routes             — view agent routing table"
+echo "  tcc watch              — live status monitor"
+echo "──────────────────────────────────────────────────────────────"
