@@ -1,5 +1,9 @@
 # tcc-task-command-center
 
+<!-- HMZ PORTFOLIO STANDARD -->
+> Portfolio status: active · Visibility: public · Source of truth: current repository source.
+<!-- END HMZ PORTFOLIO STANDARD -->
+
 > **TCC: Task Command Center** — Parallel blast, queue management, and live dashboard for all Claude Code AI operations.
 
 <p align="center">
