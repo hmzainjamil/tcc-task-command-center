@@ -14,7 +14,7 @@ TCC is a local Python CLI that stores task records as JSON, routes tasks by keyw
 
 ## Requirements and local state
 
-The main CLI uses Python's standard library. It also calls external programs and services depending on the selected route, including `~/.claude/bin/llm-burst`, `claude`, `~/.claude/bin/workflow-dag`, Ollama, and a local Paperclip API at `127.0.0.1:3100`. Those tools and their configuration are not included in this repository. No dependency manifest or automated tests are present.
+The main CLI uses Python's standard library. It also calls external programs and services depending on the selected route, including `~/.claude/bin/llm-burst`, `claude`, `~/.claude/bin/workflow-dag`, Ollama, and a local Paperclip API at `127.0.0.1:3100`. Those tools and their configuration are not included in this repository. No dependency manifest or automated tests are present. The repository scripts `tcc-dashboard` and `tcc-init` also call `~/.claude/bin/tcc`; running them from this checkout still requires that installed path and may use a different TCC copy than `./tcc`.
 
 On startup, the CLI creates `~/.claude/tasks` and `~/.claude/tcc-logs`. Task records are JSON files in the task directory; execution logs are written to the log directory. The first route lookup writes a default route table to `~/.claude/tcc-routes/routes.json`. Override this table only after reviewing its routing behavior.
 
