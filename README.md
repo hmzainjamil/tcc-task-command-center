@@ -1,154 +1,68 @@
-# tcc-task-command-center
+# TCC: Task Command Center
 
-> **TCC: Task Command Center** — Parallel blast, queue management, and live dashboard for all Claude Code AI operations.
+TCC is a local Python CLI that stores task records as JSON, routes tasks by keyword, and can execute selected local or provider-backed handlers in parallel. The repository also includes a dashboard and a script that seeds task templates.
 
-<p align="center"><a href="https://github.com/hmzainjamil/tcc-task-command-center">Repository</a> · <a href="https://github.com/hmzainjamil/tcc-task-command-center/commits/main">Commits</a> · <a href="https://github.com/hmzainjamil/tcc-task-command-center/issues">Issues</a></p>
-<p align="center"><img alt="Documentation" src="https://img.shields.io/badge/documentation-deep%20editorial-lightgrey"> <img alt="Lifecycle" src="https://img.shields.io/badge/lifecycle-active-success"></p>
+## Repository map
 
-<!-- HMZ DEEP README v1 -->
-
-## At a glance
-
-| Field | Current state |
+| File | Purpose |
 |---|---|
-| Repository | tcc-task-command-center |
-| Visibility | Public |
-| Lifecycle | Active |
-| Evidence basis | Current repository documentation and source-visible material |
+| `tcc` | Task queue, routing, execution, retry, cancellation, purge, and watch commands |
+| `tcc-dashboard` | Displays local provider-key presence, Paperclip reachability, queue, workflows, registry, launch agents, disk, RAM, and cache size |
+| `tcc-init` | Queries local Paperclip endpoints and adds eight preset tasks to the local queue |
+| `README.md` | Setup scope, commands, behavior, and limitations |
+| `SECURITY.md` | Data handling and operational risks |
 
-## Why this exists
+## Requirements and local state
 
-**TCC: Task Command Center** — Parallel blast, queue management, and live dashboard for all Claude Code AI operations.
+The main CLI uses Python's standard library. It also calls external programs and services depending on the selected route, including `~/.claude/bin/llm-burst`, `claude`, `~/.claude/bin/workflow-dag`, Ollama, and a local Paperclip API at `127.0.0.1:3100`. Those tools and their configuration are not included in this repository. No dependency manifest or automated tests are present.
 
-This README focuses on the repository's documented scope and separates implementation claims from plans, external dependencies, and unsupported outcomes.
+On startup, the CLI creates `~/.claude/tasks` and `~/.claude/tcc-logs`. Task records are JSON files in the task directory; execution logs are written to the log directory. The first route lookup writes a default route table to `~/.claude/tcc-routes/routes.json`. Override this table only after reviewing its routing behavior.
 
-## 🧠 CONCEPTS
+## Command reference
 
-| Feature | Location | Description |
-|---|---|---|
-| CoreEngine | `core/engine.py` | Primary execution logic and orchestration layer |
-| ConfigManager | `config/manager.py` | Environment validation, hot-reload, API key checks |
-| ProviderAdapters | `adapters/` | Per-provider API wrappers with auth + retry logic |
-| TierRouter | `routing/tier0.py` | Ollama→DeepSeek→Gemini→Groq→GPT cost ladder |
-| OutputFormatter | `output/formatter.py` | Caveman-compressed, signal-dense output pipeline |
-| LogManager | `logs/manager.py` | Structured JSON logging to ~/.claude/tcc-logs/ |
-| HookHandler | `hooks/handler.py` | SessionStart/Stop integration for Claude Code |
-| RetryLogic | `core/retry.py` | Exponential backoff + alt-provider on persistent failure |
-| StatusTracker | `core/status.py` | Per-operation metrics: latency, cost, confidence scores |
-| Scheduler | `schedule/scheduler.py` | LaunchAgent-based cron scheduling for automation |
-
-## ⚙️ HOW IT WORKS
-
-```
-Input / Trigger (CLI command or hook event)
-    │
-    ▼
-ConfigManager: load .env, validate all provider API keys
-    │
-    ▼
-TierRouter: Ollama → DeepSeek → Gemini → Groq → GPT
-    │        (cost-ordered; local-first enforced always)
-    ▼
-CoreEngine: primary processing with selected provider adapter
-    │
-    ├── ProviderAdapter: API call with rate-limit handling
-    ├── RetryLogic: exponential backoff + alt provider on failure
-    ├── StatusTracker: record latency, cost, confidence score
-    │
-    ▼
-OutputFormatter: caveman-compress result to signal-dense format
-    │
-    ▼
-LogManager: persist full run record to ~/.claude/tcc-logs/
-    │
-    ▼
-stdout / file output / hook callback response
-```
-
-## 🚀 INSTALL
+Run the executable from the repository root. Examples below document source behavior; they have not been run during this review.
 
 ```bash
-git clone https://github.com/hmzainjamil/tcc-task-command-center
-cd tcc-task-command-center
-pip install -r requirements.txt
-cp .env.example .env
-# Fill in: GROQ_API_KEY, GEMINI_API_KEY, DEEPSEEK_API_KEY
-# Optional: OPENAI_API_KEY, ANTHROPIC_API_KEY (fallback only)
-python setup.py verify    # confirms all provider connections live
-python setup.py hooks     # installs Claude Code SessionStart/Stop hooks
-mkdir -p ~/.claude/tcc-logs/  # create log directory
+./tcc routes
+./tcc add "draft a project brief" --priority med
+./tcc list --status pending
+./tcc status TASK_ID
+./tcc fire TASK_ID --dry-run
+./tcc fire all
+./tcc blast "task one" "task two" --dry-run
+./tcc retry failed
+./tcc cancel TASK_ID
+./tcc purge --status failed
+./tcc watch
+./tcc-dashboard
+./tcc-init
 ```
 
-## 📟 USAGE
+Important command semantics:
 
-```bash
-# Primary usage — single command fires full pipeline
-python main.py "your goal or task description here"
+- `add` stores a pending task. `add --fire` also executes it.
+- `fire all` runs all pending tasks in parallel. A task may call a provider, external CLI, workflow runner, or local Paperclip API based on its route.
+- `fire --dry-run` does not execute the task handler, but it marks the task `done` with a `[dry-run]` result. It is a state-changing simulation.
+- `blast` creates tasks and fires them immediately. Its `--dry-run` option still changes task records to done.
+- `cancel` changes the recorded status to `cancelled`; it does not stop an already running subprocess.
+- `retry` resets failed or cancelled tasks to pending. `retry --fire` also runs them.
+- `purge` deletes task JSON files matching a status. It defaults to failed tasks.
+- `tcc-init` queries Paperclip and adds eight preset tasks. It does not fire them automatically.
+- `tcc-dashboard` reads local configuration/state and probes Ollama, Paperclip, launchd, and system resources.
 
-# Specify provider explicitly (skip auto-routing)
-python main.py --provider groq "summarize this document quickly"
+## Routing and execution
 
-# Output to file (default: stdout)
-python main.py "task description" --output ~/Downloads/result.md
+The default route table matches keywords in task descriptions and selects handlers such as `tier0-blast`, `paperclip`, `workflow-dag`, `claude-code-subagent`, or `apify`. Routing labels are not proof that every referenced tool, skill, API, or model is installed or available.
 
-# Dry run — show routing plan without making any API calls
-python main.py --dry-run "test task to check routing"
+The Apify handler currently returns a message describing a possible actor invocation; it does not run an actor. Other handlers can make network requests, invoke local commands, or create workflow files. The TCC route table is stored outside the repository and can override defaults.
 
-# Verbose mode — shows provider selection, scores, latency
-python main.py --verbose "research task with full debug output"
+## Data and safety
 
-# Batch mode — process multiple inputs from file
-python main.py --batch inputs.txt --output ~/Downloads/results/
+Task descriptions are stored locally and may be passed to external providers or subprocesses. The default LLM handler invokes `llm-burst`; other handlers can call `claude`, `workflow-dag`, or Paperclip. See [`SECURITY.md`](SECURITY.md) before processing private or untrusted task text.
 
-# Status and health verification
-python main.py status      # show all configured providers + health
-python main.py verify      # test live connections to all providers
-```
+## Validation and release status
 
-## ⚙️ CONFIGURATION
-
-| Variable | Default | Description |
-|---|---|---|
-| `GROQ_API_KEY` | — | Groq Cloud API key (primary fast text provider) |
-| `GEMINI_API_KEY` | — | Google AI Studio key (long-context and multimodal) |
-| `DEEPSEEK_API_KEY` | — | DeepSeek API key (code specialist tasks) |
-| `OPENAI_API_KEY` | — | OpenAI (Tier 1 fallback; used after Tier 0 exhausted) |
-| `ANTHROPIC_API_KEY` | — | Claude (final resort; only on explicit user request) |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Local Ollama endpoint (checked first always) |
-| `LOG_DIR` | `~/.claude/tcc-logs/` | Output log directory for all run records |
-| `TIMEOUT_S` | `30` | Per-operation timeout in seconds per provider |
-| `RETRY_COUNT` | `2` | Number of retry attempts before marking failed |
-| `CONFIDENCE_THRESHOLD` | `0.6` | Minimum confidence score to accept output (0.0-1.0) |
-| `COMPRESS_OUTPUT` | `true` | Apply caveman-compression to all outputs |
-| `LOG_LEVEL` | `INFO` | Logging verbosity: DEBUG / INFO / WARN / ERROR |
-| `LOCAL_FIRST` | `true` | Always try Ollama before any paid API call |
-| `AUTO_RETRY_ALT` | `true` | Automatically switch provider on persistent failure |
-| `OUTPUT_DIR` | `~/Downloads` | Default directory for all generated file outputs |
-
-## Validation and evidence
-
-No dedicated test or evaluation section was available in the current README.
-
-## 🔐 SECURITY CONSIDERATIONS
-
-## Limitations
-
-- Planned work is not presented as completed functionality.
-- Quantitative claims require reproducible evidence.
-- External provider behavior and pricing remain external dependencies.
-
-## 📚 RELATED REPOS IN THE HMZ AI SYSTEM
-
-| Repo | Role | Dependency |
-|---|---|---|
-| [G0DM0D3](https://github.com/hmzainjamil/G0DM0D3) | Multi-model racing + Liquid Response | Uses tier0-llm-router |
-| [mae-master-automation-engine](https://github.com/hmzainjamil/mae-master-automation-engine) | Goal decomposition + specialist swarm | Uses tcc, tier0 |
-| [tcc-task-command-center](https://github.com/hmzainjamil/tcc-task-command-center) | Parallel blast + queue + dashboard | Used by mae |
-| [tier0-llm-router](https://github.com/hmzainjamil/tier0-llm-router) | Cost-optimized routing ladder | Used by all |
-| [hermes-ai-system](https://github.com/hmzainjamil/hermes-ai-system) | Persistent agent + 80+ skills | Uses tier0, mcp |
-| [claude-ai-system-backup](https://github.com/hmzainjamil/claude-ai-system-backup) | System backup + restore | Backs up all |
-
-<div align="center">Built by <a href="https://github.com/hmzainjamil">HMZ</a> · Part of the <a href="https://github.com/hmzainjamil/claude-ai-system">HMZ Claude AI System</a> · Zero broken workflows</div>
+The README documents the checked-in source, not a verified deployment. No scripts, providers, queues, workflows, dashboard, or Paperclip services were run for this review. The repository has no test suite, dependency manifest, or license file; GitHub metadata reports no declared license. Do not infer permission to reuse or redistribute its contents.
 
 ## Maintainer
 
